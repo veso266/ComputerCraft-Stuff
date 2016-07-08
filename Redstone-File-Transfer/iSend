@@ -1,0 +1,102 @@
+--[[isend - internet send by Ozzypig
+for ComputerCraft 1.1
+Run this program in the shell with the following arguments:
+isend [file|message] <filename|message_text>
+This still works with ComputerCraft 1.2 (and 1.21).
+]]
+--== SETTINGS =---
+debug = true
+--redstone outputs
+p = "left"
+v = "back"
+--time between updates
+t = 0.1
+----------------
+
+args = {...}
+if args[1] == "file" then
+   --open a file to send
+   fname = args[2]
+   if not fname then return end
+   if not fs.exists(fname) then return end
+   local f = fs.open(fname, "r")
+   text = "F" .. fname .. "|" .. f.readAll()
+   f.close()
+elseif args[1] == "msg" then
+   --send just a message. replace "_" with " "
+   text = "M" .. (args[2] or "derp"):gsub("_"," ")
+else
+   print("isend [file|msg] [file_name|text]")
+   return
+end
+
+bit = {p = p, v = v}
+r = setmetatable({}, {
+   __index = function (this, key)
+      return redstone.getInput(key)
+   end;
+   __newindex = function (this, key, value)
+      return redstone.setOutput(key, value)
+   end;
+})
+
+function send_ping()
+   r[bit.p] = not r[bit.p]
+end
+
+function send_seq(seq)
+   for k, v in pairs(seq) do
+      r[bit.v] = v
+      send_ping()
+      os.sleep(t)
+   end
+end
+
+function to_seq(x)
+   --convert n (base-10) to n (base-2)
+   --8-bit numbers are accepted (0 to 255)
+   local seq = {}
+   local n = x
+   for i = 7, 0, -1 do
+      local a = math.pow(2, i)
+      local b = n >= a
+      --seq[i + 1] = tostring(b) .. " (" .. a .. ", " .. n .. ")"
+      seq[i + 1] = b
+      if b then n = n - a end
+   end
+   return seq
+end
+
+function print_r(t)
+   local str = ""
+   for k, v in pairs(t) do str = str .. "[" .. k .. "]" .. tostring(v) .. "\n" end
+   print(str)
+end
+
+function send_char(char)
+   local byte = string.byte(char)
+   local seq = to_seq(byte)
+
+   local str = ""
+   for i = 1, #seq do str = str .. (seq[i] and 1 or 0) end
+   if debug then print("DATA: [" .. str .. "] | CHAR: [" .. char .. "] | BYTE: " .. byte) end
+
+   send_seq(seq)
+end
+
+function send_str(str)
+   for i = 1, str:len() do
+      local char = str:sub(i, i)
+      send_char(char)
+   end
+   send_seq(to_seq(0)) --close the string with \0
+   send_seq(to_seq(0)) --two of them, actually :)
+end
+
+send_ping()
+os.sleep(1)
+send_str(text)
+
+os.sleep(0.2)
+r[bit.p] = false
+r[bit.v] = false
