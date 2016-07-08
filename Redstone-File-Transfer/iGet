@@ -1,0 +1,151 @@
+--[[iget - internet get by Ozzypig
+for ComputerCraft 1.1
+Run this program and the computer will listen for something sent by isend.
+This still works with ComputerCraft 1.2 (and 1.21).
+]]
+--== SETTINGS ==--
+debug = false
+--redstone inputs
+p = "right"
+v = "back"
+------------------
+
+r = setmetatable({}, {
+   __index = function (this, key)
+      return redstone.getInput(key)
+   end;
+   __newindex = function (this, key, value)
+      return redstone.setOutput(key, value)
+   end
+})
+bit = {p = p; v = v}
+
+function wait_for_ping()
+   local x = r[bit.p]
+   while r[bit.p] == x do os.sleep(0.05) end
+   local v = r[bit.v]
+   return v
+end
+
+function check_end(t, s, a)
+   local n = s
+   for i = n, n - a, -1 do
+      if t[i] then return false end --no end yet
+      if i <= 0 then return false end --too short
+   end
+   return true --did end
+end
+
+function print_seq(seq)
+   local str = ""
+   for k, v in pairs(seq) do str = str .. (v and 1 or 0) end
+   return str
+end
+
+print("Waiting for ping...")
+wait_for_ping()
+print("Ready for data")
+
+t = true; f = false;
+
+seq = {}
+i = 1
+q = true
+w,h = term.getSize()
+while q do
+   local v = wait_for_ping()
+   term.write(v and 1 or 0)
+   if i % w == 0 then print(" ") end
+   seq[i] = v
+   if check_end(seq, i, 16) then print("Finished") q = false end
+   i = i + 1
+   if i > 8 * 512 then print("Too much data") q = false end
+end
+
+print("Recieved: (" .. #seq .. ")")
+print(print_seq(seq))
+
+message = ""
+str = "" --base-2 string
+
+for i = 1, #seq do
+   str = (seq[i] and 1 or 0) .. str
+   if str:len() >= 8 then
+      local byte = tonumber(str, 2)
+      local char = string.char(byte)
+      if debug then print("DATA: [" .. str .. "] CHAR: [" .. char .. "] | BYTE: " .. byte) end
+      message = message .. char
+      str = ""
+   end
+end
+
+type = message:sub(1, 1)
+message = message:sub(2)
+
+if type == "F" then     name = "file"
+elseif type == "M" then name = "message"
+else                    name = "data"    end
+
+a = ""
+if type == "F" then
+   local s, e = message:find("|")
+   if s then
+      fname = message:sub(1, s - 2)
+      a = " [" .. fname .. "]"
+   else
+     type = "M"
+   end
+end
+
+print("--------- " .. name:upper() .. " START" .. a)
+print(message)
+print("--------- " .. name:upper() .. " END" .. a)
+
+print("   Save this " .. name .. "? Y/N")
+
+function getchar(t)
+   local a, b, c
+   repeat
+      a, b, c = os.pullEvent()
+   until a == "char" and t[b]
+   return b
+end
+
+function getYN()
+   return getchar({y=true;n=true})
+end
+
+b = getYN()
+
+if b == "y" then
+   local confirm = false
+   local do_it = false
+   if type == "F" then confirm = true; do_it = true; end
+   while not confirm or not fname do
+      if not fname then
+          term.write("   File name? >")
+          repeat fname = io.read() until fname and fname:len() > 0
+      end
+      if not confirm then
+          fname = fname or "untitled"
+          print("   Save as " .. fname .. "? Y/N")
+          local b = getYN()
+          if b == "y" then confirm = true; do_it = true; else
+             fname = nil 
+             confirm = false
+          end
+      end
+   end
+   if do_it and fname then
+      local f = fs.open(fname, "w")
+      f.write(message)
+      f.close()
+      print("Saved to " .. fname)
+   else
+      print("Not saved")
+   end
+else
+   print("Not saved")
+end
+
+--]]
